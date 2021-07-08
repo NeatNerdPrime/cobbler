@@ -17,17 +17,17 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 02110-1301  USA
 """
-
+import logging
 import time
 import os
+import uuid
 from threading import Lock
-from typing import Optional
+from typing import List, Union
 
 from cobbler import utils
-from cobbler.actions import litesync
-from cobbler.items import package, system, item as item_base, image, profile, repo, mgmtclass, distro, file
+from cobbler.items import package, system, item as item_base, image, profile, repo, mgmtclass, distro, file, menu
 
-from cobbler.cexceptions import CX, NotImplementedException
+from cobbler.cexceptions import CX
 
 
 class Collection:
@@ -46,6 +46,7 @@ class Collection:
         self.api = self.collection_mgr.api
         self.lite_sync = None
         self.lock = Lock()
+        self.logger = logging.getLogger()
 
     def __iter__(self):
         """
@@ -60,28 +61,28 @@ class Collection:
         """
         return len(list(self.listing.values()))
 
-    def factory_produce(self, collection_mgr, seed_data):
+    def factory_produce(self, api, seed_data):
         """
         Must override in subclass. Factory_produce returns an Item object from dict.
 
-        :param collection_mgr: The collection manager to resolve all information with.
+        :param api: The API to resolve all information with.
         :param seed_data: Unused Parameter in the base collection.
         """
-        raise NotImplementedException()
+        raise NotImplementedError()
 
     def remove(self, name: str, with_delete: bool = True, with_sync: bool = True, with_triggers: bool = True,
                recursive: bool = False):
         """
-        Remove an item from collection. This method must be overriden in any subclass.
+        Remove an item from collection. This method must be overridden in any subclass.
 
         :param name: Item Name
         :param with_delete: sync and run triggers
         :param with_sync: sync to server file system
         :param with_triggers: run "on delete" triggers
         :param recursive: recursively delete children
-        :returns: NotImplementedException
+        :returns: NotImplementedError
         """
-        raise NotImplementedException("Please implement this in a child class of this class.")
+        raise NotImplementedError("Please implement this in a child class of this class.")
 
     def get(self, name):
         """
@@ -92,9 +93,10 @@ class Collection:
         """
         return self.listing.get(name.lower(), None)
 
-    def find(self, name: Optional[str] = None, return_list: bool = False, no_errors=False, **kargs):
+    def find(self, name: str = "", return_list: bool = False, no_errors=False,
+             **kargs: dict) -> Union[List[item_base.Item], item_base.Item, None]:
         """
-        Return first object in the collection that maches all item='value' pairs passed, else return None if no objects
+        Return first object in the collection that matches all item='value' pairs passed, else return None if no objects
         can be found. When return_list is set, can also return a list.  Empty list would be returned instead of None in
         that case.
 
@@ -103,20 +105,19 @@ class Collection:
         :param no_errors: If errors which are possibly thrown while searching should be ignored or not.
         :param kargs: If name is present, this is optional, otherwise this dict needs to have at least a key with
                       ``name``. You may specify more keys to finetune the search.
-        :type kargs: dict
         :return: The first item or a list with all matches.
+        :raises ValueError: In case no arguments for searching were specified.
         """
         matches = []
 
-        # support the old style innovation without kwargs
-        if name is not None:
+        if name:
             kargs["name"] = name
 
         kargs = self.__rekey(kargs)
 
         # no arguments is an error, so we don't return a false match
         if len(kargs) == 0:
-            raise CX("calling find with no arguments")
+            raise ValueError("calling find with no arguments")
 
         # performance: if the only key is name we can skip the whole loop
         if len(kargs) == 1 and "name" in kargs and not return_list:
@@ -158,6 +159,8 @@ class Collection:
         'virt-group': 'virt_group',
         'dhcp-tag': 'dhcp_tag',
         'netboot-enabled': 'netboot_enabled',
+        'enable_gpxe': 'enable_ipxe',
+        'boot_loader': 'boot_loaders',
     }
 
     def __rekey(self, _dict: dict) -> dict:
@@ -195,7 +198,7 @@ class Collection:
         if _list is None:
             return
         for item_dict in _list:
-            item = self.factory_produce(self.collection_mgr, item_dict)
+            item = self.factory_produce(self.api, item_dict)
             self.add(item)
 
     def copy(self, ref, newname):
@@ -206,24 +209,23 @@ class Collection:
         :param newname: The new name for the copied object.
         """
         ref = ref.make_clone()
-        ref.uid = self.collection_mgr.generate_uid()
-        ref.ctime = 0
-        ref.set_name(newname)
+        ref.uid = uuid.uuid4().hex
+        ref.ctime = time.time()
+        ref.name = newname
         if ref.COLLECTION_TYPE == "system":
             # this should only happen for systems
-            for iname in list(ref.interfaces.keys()):
+            for interface in ref.interfaces:
                 # clear all these out to avoid DHCP/DNS conflicts
-                ref.set_dns_name("", iname)
-                ref.set_mac_address("", iname)
-                ref.set_ip_address("", iname)
+                ref.interfaces[interface].dns_name = ""
+                ref.interfaces[interface].mac_address = ""
+                ref.interfaces[interface].ip_address = ""
 
-        self.add(
-            ref, save=True, with_copy=True, with_triggers=True, with_sync=True,
-            check_for_duplicate_names=True, check_for_duplicate_netinfo=False)
+        self.add(ref, save=True, with_copy=True, with_triggers=True, with_sync=True, check_for_duplicate_names=True,
+                 check_for_duplicate_netinfo=False)
 
-    def rename(self, ref, newname, with_sync: bool = True, with_triggers: bool = True):
+    def rename(self, ref: item_base.Item, newname, with_sync: bool = True, with_triggers: bool = True):
         """
-        Allows an object "ref" to be given a newname without affecting the rest of the object tree.
+        Allows an object "ref" to be given a new name without affecting the rest of the object tree.
 
         :param ref: The reference to the object which should be renamed.
         :param newname: The new name for the object.
@@ -237,7 +239,7 @@ class Collection:
         # make a copy of the object, but give it a new name.
         oldname = ref.name
         newref = ref.make_clone()
-        newref.set_name(newname)
+        newref.name = newname
 
         self.add(newref, with_triggers=with_triggers, save=True)
 
@@ -249,6 +251,14 @@ class Collection:
                     for i in range(0, len(item.mgmt_classes)):
                         if item.mgmt_classes[i] == oldname:
                             item.mgmt_classes[i] = newname
+                    self.api.add_item(what, item, save=True)
+
+        # for menus, update all objects that use it
+        if ref.COLLECTION_TYPE == "menu":
+            for what in ["profile", "image"]:
+                items = self.api.find_items(what, {"menu": oldname})
+                for item in items:
+                    item.menu = newname
                     self.api.add_item(what, item, save=True)
 
         # for a repo, rename the mirror directory
@@ -275,30 +285,33 @@ class Collection:
                 distros = self.api.distros()
                 for d in distros:
                     if d.kernel.find(path) == 0:
-                        d.set_kernel(d.kernel.replace(path, newpath))
-                        d.set_initrd(d.initrd.replace(path, newpath))
+                        d.kernel = d.kernel.replace(path, newpath)
+                        d.initrd = d.initrd.replace(path, newpath)
                         self.collection_mgr.serialize_item(self, d)
 
         # Now descend to any direct ancestors and point them at the new object allowing the original object to be
         # removed without orphanage. Direct ancestors will either be profiles or systems. Note that we do have to
-        # care as set_parent is only really meaningful for subprofiles. We ideally want a more generic set_parent.
+        # care as setting the parent is only really meaningful for subprofiles. We ideally want a more generic parent
+        # setter.
         kids = ref.get_children()
         for k in kids:
-            if k.COLLECTION_TYPE == "distro":
-                raise CX("internal error, not expected to have distro child objects")
-            elif k.COLLECTION_TYPE == "profile":
+            if self.api.find_profile(name=k) is not None:
+                k = self.api.find_profile(name=k)
                 if k.parent != "":
-                    k.set_parent(newname)
+                    k.parent = newname
                 else:
-                    k.set_distro(newname)
+                    k.distro = newname
                 self.api.profiles().add(k, save=True, with_sync=with_sync, with_triggers=with_triggers)
-            elif k.COLLECTION_TYPE == "system":
-                k.set_profile(newname)
+            elif self.api.find_menu(name=k) is not None:
+                k = self.api.find_menu(name=k)
+                k.parent = newname
+                self.api.menus().add(k, save=True, with_sync=with_sync, with_triggers=with_triggers)
+            elif self.api.find_system(name=k) is not None:
+                k = self.api.find_system(name=k)
+                k.profile = newname
                 self.api.systems().add(k, save=True, with_sync=with_sync, with_triggers=with_triggers)
-            elif k.COLLECTION_TYPE == "repo":
-                raise CX("internal error, not expected to have repo child objects")
             else:
-                raise CX("internal error, unknown child type (%s), cannot finish rename" % k.COLLECTION_TYPE)
+                raise CX("Internal error, unknown child type for child \"%s\"!" % k)
 
         # now delete the old version
         self.remove(oldname, with_delete=True, with_triggers=with_triggers)
@@ -311,7 +324,7 @@ class Collection:
         Add an object to the collection
 
         :param ref: The reference to the object.
-        :param save: If this is true then the objet is persited on the disk.
+        :param save: If this is true then the objet is persisted on the disk.
         :param with_copy: Is a bit of a misnomer, but lots of internal add operations can run with "with_copy" as False.
                           True means a real final commit, as if entered from the command line (or basically, by a user).
                           With with_copy as False, the particular add call might just be being run during
@@ -321,30 +334,29 @@ class Collection:
         :param with_triggers: If triggers should be run when the object is renamed.
         :param quick_pxe_update: This decides if there should be run a quick or full update after the add was done.
         :param check_for_duplicate_names: If the name of an object should be unique or not.
-        :type check_for_duplicate_names: bool
         :param check_for_duplicate_netinfo: This checks for duplicate network information. This only has an effect on
                                             systems.
-        :type check_for_duplicate_netinfo: bool
+        :raises TypError or ValueError
         """
         item_base.Item.remove_from_cache(ref)
         if ref is None:
-            raise CX("Unable to add a None object")
+            raise TypeError("Unable to add a None object")
         if ref.name is None:
-            raise CX("Unable to add an object without a name")
+            raise ValueError("Unable to add an object without a name")
 
         ref.check_if_valid()
 
         if ref.uid == '':
-            ref.uid = self.collection_mgr.generate_uid()
+            ref.uid = uuid.uuid4().hex
 
-        if save is True:
-            now = time.time()
-            if ref.ctime == 0:
+        if save:
+            now = float(time.time())
+            if ref.ctime == 0.0:
                 ref.ctime = now
             ref.mtime = now
 
         if self.lite_sync is None:
-            self.lite_sync = litesync.CobblerLiteSync(self.collection_mgr)
+            self.lite_sync = self.api.get_sync()
 
         # migration path for old API parameter that I've renamed.
         if with_copy and not save:
@@ -359,7 +371,7 @@ class Collection:
         self.__duplication_checks(ref, check_for_duplicate_names, check_for_duplicate_netinfo)
 
         if ref.COLLECTION_TYPE != self.collection_type():
-            raise CX("API error: storing wrong data type in collection")
+            raise TypeError("API error: storing wrong data type in collection")
 
         # failure of a pre trigger will prevent the object from being added
         if save and with_triggers:
@@ -399,6 +411,8 @@ class Collection:
                     pass
                 elif isinstance(ref, file.File):
                     pass
+                elif isinstance(ref, menu.Menu):
+                    pass
                 else:
                     print("Internal error. Object type not recognized: %s" % type(ref))
             if not with_sync and quick_pxe_update:
@@ -408,12 +422,13 @@ class Collection:
             # save the tree, so if neccessary, scripts can examine it.
             if with_triggers:
                 utils.run_triggers(self.api, ref, "/var/lib/cobbler/triggers/change/*", [])
-                utils.run_triggers(self.api, ref, "/var/lib/cobbler/triggers/add/%s/post/*" % self.collection_type(), [])
+                utils.run_triggers(self.api, ref, "/var/lib/cobbler/triggers/add/%s/post/*" % self.collection_type(),
+                                   [])
 
         # update children cache in parent object
-        parent = ref.get_parent()
-        if parent is not None:
-            parent.children[ref.name] = ref
+        if ref.parent:
+            ref.parent.children.append(ref.name)
+            self.logger.debug("Added child \"%s\" to parent \"%s\"", ref.name, ref.parent.name)
 
     def __duplication_checks(self, ref, check_for_duplicate_names: bool, check_for_duplicate_netinfo: bool):
         """
@@ -446,11 +461,13 @@ class Collection:
                 match = self.api.find_package(ref.name)
             elif isinstance(ref, file.File):
                 match = self.api.find_file(ref.name)
+            elif isinstance(ref, menu.Menu):
+                match = self.api.find_menu(ref.name)
             else:
                 raise CX("internal error, unknown object type")
 
             if match:
-                raise CX("An object already exists with that name.  Try 'edit'?")
+                raise CX("An object already exists with that name. Try 'edit'?")
 
         # the duplicate mac/ip checks can be disabled.
         if not check_for_duplicate_netinfo:
@@ -461,9 +478,9 @@ class Collection:
                 match_ip = []
                 match_mac = []
                 match_hosts = []
-                input_mac = intf["mac_address"]
-                input_ip = intf["ip_address"]
-                input_dns = intf["dns_name"]
+                input_mac = intf.mac_address
+                input_ip = intf.ip_address
+                input_dns = intf.dns_name
                 if not self.api.settings().allow_duplicate_macs and input_mac is not None and input_mac != "":
                     match_mac = self.api.find_system(mac_address=input_mac, return_list=True)
                 if not self.api.settings().allow_duplicate_ips and input_ip is not None and input_ip != "":
@@ -475,13 +492,16 @@ class Collection:
 
                 for x in match_mac:
                     if x.name != ref.name:
-                        raise CX("Can't save system %s. The MAC address (%s) is already used by system %s (%s)" % (ref.name, intf["mac_address"], x.name, name))
+                        raise CX("Can't save system %s. The MAC address (%s) is already used by system %s (%s)"
+                                 % (ref.name, intf.mac_address, x.name, name))
                 for x in match_ip:
                     if x.name != ref.name:
-                        raise CX("Can't save system %s. The IP address (%s) is already used by system %s (%s)" % (ref.name, intf["ip_address"], x.name, name))
+                        raise CX("Can't save system %s. The IP address (%s) is already used by system %s (%s)"
+                                 % (ref.name, intf.ip_address, x.name, name))
                 for x in match_hosts:
                     if x.name != ref.name:
-                        raise CX("Can't save system %s.  The dns name (%s) is already used by system %s (%s)" % (ref.name, intf["dns_name"], x.name, name))
+                        raise CX("Can't save system %s.  The dns name (%s) is already used by system %s (%s)"
+                                 % (ref.name, intf.dns_name, x.name, name))
 
     def to_string(self) -> str:
         """
@@ -489,7 +509,6 @@ class Collection:
         Actually scripts would be better off reading the JSON in the cobbler_collections files directly.
 
         :return: The object as a string representation.
-        :rtype: str
         """
         values = list(self.listing.values())[:]   # copy the values
         values.sort()                       # sort the copy (2.3 fix)
@@ -506,11 +525,11 @@ class Collection:
         """
         Returns the string key for the name of the collection (used by serializer etc)
         """
-        raise NotImplementedException("Please implement the method \"collection_type\" in your Collection!")
+        raise NotImplementedError("Please implement the method \"collection_type\" in your Collection!")
 
     @staticmethod
     def collection_types() -> str:
         """
         Returns the string key for the plural name of the collection (used by serializer)
         """
-        raise NotImplementedException("Please implement the method \"collection_types\" in your Collection!")
+        raise NotImplementedError("Please implement the method \"collection_types\" in your Collection!")

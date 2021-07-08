@@ -79,10 +79,10 @@ cobbler.download\_manager module
     :undoc-members:
     :show-inheritance:
 
-cobbler.field\_info module
---------------------------
+cobbler.enums module
+--------------------------------
 
-.. automodule:: cobbler.field_info
+.. automodule:: cobbler.enums
     :members:
     :undoc-members:
     :show-inheritance:

@@ -37,11 +37,11 @@ class Files(collection.Collection):
     def collection_types() -> str:
         return "files"
 
-    def factory_produce(self, collection_mgr, item_dict):
+    def factory_produce(self, api, item_dict):
         """
         Return a File forged from item_dict
         """
-        new_file = file.File(collection_mgr)
+        new_file = file.File(api)
         new_file.from_dict(item_dict)
         return new_file
 
@@ -49,13 +49,15 @@ class Files(collection.Collection):
                recursive: bool = False):
         """
         Remove element named 'name' from the collection
+
+        :raises CX
         """
         name = name.lower()
         obj = self.find(name=name)
         if obj is not None:
             if with_delete:
                 if with_triggers:
-                    utils.run_triggers(self.collection_mgr.api, obj, "/var/lib/cobbler/triggers/delete/file/*", [])
+                    utils.run_triggers(self.api, obj, "/var/lib/cobbler/triggers/delete/file/*", [])
 
             self.lock.acquire()
             try:
@@ -66,8 +68,8 @@ class Files(collection.Collection):
 
             if with_delete:
                 if with_triggers:
-                    utils.run_triggers(self.collection_mgr.api, obj, "/var/lib/cobbler/triggers/delete/file/post/*", [])
-                    utils.run_triggers(self.collection_mgr.api, obj, "/var/lib/cobbler/triggers/change/*", [])
+                    utils.run_triggers(self.api, obj, "/var/lib/cobbler/triggers/delete/file/post/*", [])
+                    utils.run_triggers(self.api, obj, "/var/lib/cobbler/triggers/change/*", [])
 
             return
 

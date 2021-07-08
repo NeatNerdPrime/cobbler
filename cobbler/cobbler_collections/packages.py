@@ -37,11 +37,11 @@ class Packages(collection.Collection):
     def collection_types() -> str:
         return "packages"
 
-    def factory_produce(self, collection_mgr, item_dict):
+    def factory_produce(self, api, item_dict):
         """
         Return a Package forged from item_dict
         """
-        new_package = package.Package(collection_mgr)
+        new_package = package.Package(api)
         new_package.from_dict(item_dict)
         return new_package
 
@@ -49,13 +49,15 @@ class Packages(collection.Collection):
                recursive: bool = False):
         """
         Remove element named 'name' from the collection
+
+        :raises CX
         """
         name = name.lower()
         obj = self.find(name=name)
         if obj is not None:
             if with_delete:
                 if with_triggers:
-                    utils.run_triggers(self.collection_mgr.api, obj, "/var/lib/cobbler/triggers/delete/package/*", [])
+                    utils.run_triggers(self.api, obj, "/var/lib/cobbler/triggers/delete/package/*", [])
 
             self.lock.acquire()
             try:
@@ -66,8 +68,8 @@ class Packages(collection.Collection):
 
             if with_delete:
                 if with_triggers:
-                    utils.run_triggers(self.collection_mgr.api, obj, "/var/lib/cobbler/triggers/delete/package/post/*", [])
-                    utils.run_triggers(self.collection_mgr.api, obj, "/var/lib/cobbler/triggers/change/*", [])
+                    utils.run_triggers(self.api, obj, "/var/lib/cobbler/triggers/delete/package/post/*", [])
+                    utils.run_triggers(self.api, obj, "/var/lib/cobbler/triggers/change/*", [])
 
             return
 

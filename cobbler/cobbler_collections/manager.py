@@ -20,13 +20,10 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 02110-1301  USA
 """
 
-import time
 import weakref
-import uuid
 from typing import Union, Dict, Any
 
 from cobbler.cexceptions import CX
-from cobbler import settings
 from cobbler import serializer
 from cobbler.cobbler_collections.distros import Distros
 from cobbler.cobbler_collections.files import Files
@@ -36,7 +33,7 @@ from cobbler.cobbler_collections.packages import Packages
 from cobbler.cobbler_collections.profiles import Profiles
 from cobbler.cobbler_collections.repos import Repos
 from cobbler.cobbler_collections.systems import Systems
-from cobbler.settings import Settings
+from cobbler.cobbler_collections.menus import Menus
 
 
 class CollectionManager:
@@ -64,8 +61,6 @@ class CollectionManager:
         """
         CollectionManager.has_loaded = True
 
-        self.init_time = time.time()
-        self.current_id = 0
         self.api = api
         self._distros = Distros(weakref.proxy(self))
         self._repos = Repos(weakref.proxy(self))
@@ -75,17 +70,8 @@ class CollectionManager:
         self._mgmtclasses = Mgmtclasses(weakref.proxy(self))
         self._packages = Packages(weakref.proxy(self))
         self._files = Files(weakref.proxy(self))
+        self._menus = Menus(weakref.proxy(self))
         # Not a true collection
-        self._settings = settings.Settings()
-
-    def generate_uid(self):
-        """
-        Cobbler itself does not use this GUID's though they are provided to allow for easier API linkage with other
-        applications. Cobbler uses unique names in each collection as the object id aka primary key.
-
-        :return: A version 4 UUID according to the python implementation of RFC 4122.
-        """
-        return uuid.uuid4().hex
 
     def distros(self):
         """
@@ -105,11 +91,11 @@ class CollectionManager:
         """
         return self._systems
 
-    def settings(self) -> Settings:
+    def settings(self):
         """
         Return the definitive copy of the application settings
         """
-        return self._settings
+        return self.api.settings()
 
     def repos(self) -> Repos:
         """
@@ -141,6 +127,12 @@ class CollectionManager:
         """
         return self._files
 
+    def menus(self):
+        """
+        Return the definitive copy of the Menus collection
+        """
+        return self._menus
+
     def serialize(self):
         """
         Save all cobbler_collections to disk
@@ -154,6 +146,7 @@ class CollectionManager:
         serializer.serialize(self._mgmtclasses)
         serializer.serialize(self._packages)
         serializer.serialize(self._files)
+        serializer.serialize(self._menus)
 
     # pylint: disable=R0201
     def serialize_item(self, collection, item):
@@ -163,8 +156,7 @@ class CollectionManager:
         :param collection: Collection
         :param item: collection item
         """
-
-        return serializer.serialize_item(collection, item)
+        serializer.serialize_item(collection, item)
 
     # pylint: disable=R0201
     def serialize_delete(self, collection, item):
@@ -174,8 +166,7 @@ class CollectionManager:
         :param collection: collection
         :param item: collection item
         """
-
-        return serializer.serialize_delete(collection, item)
+        serializer.serialize_delete(collection, item)
 
     def deserialize(self):
         """
@@ -183,9 +174,7 @@ class CollectionManager:
 
         :raises CX: if there is an error in deserialization
         """
-
         for collection in (
-            self._settings,
             self._distros,
             self._repos,
             self._profiles,
@@ -194,6 +183,7 @@ class CollectionManager:
             self._mgmtclasses,
             self._packages,
             self._files,
+            self._menus,
         ):
             try:
                 serializer.deserialize(collection)
@@ -202,7 +192,7 @@ class CollectionManager:
                          % (collection.collection_type(), e)) from e
 
     def get_items(self, collection_type: str) -> Union[Distros, Profiles, Systems, Repos, Images, Mgmtclasses, Packages,
-                                                       Files, Settings]:
+                                                       Files, Menus]:
         """
         Get a full collection of a single type.
 
@@ -213,7 +203,7 @@ class CollectionManager:
         :return: The collection if ``collection_type`` is valid.
         :raises CX: If the ``collection_type`` is invalid.
         """
-        result: Union[Distros, Profiles, Systems, Repos, Images, Mgmtclasses, Packages, Files, Settings]
+        result: Union[Distros, Profiles, Systems, Repos, Images, Mgmtclasses, Packages, Files, Menus]
         if collection_type == "distro":
             result = self._distros
         elif collection_type == "profile":
@@ -230,8 +220,10 @@ class CollectionManager:
             result = self._packages
         elif collection_type == "file":
             result = self._files
+        elif collection_type == "menu":
+            result = self._menus
         elif collection_type == "settings":
-            result = self._settings
+            result = self.api.settings()
         else:
-            raise CX("internal error, collection name %s not supported" % collection_type)
+            raise CX("internal error, collection name \"%s\" not supported" % collection_type)
         return result

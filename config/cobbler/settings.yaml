@@ -131,12 +131,12 @@ default_virt_ram: 512
 # (NOTE: this does not change what virt_type is chosen by import)
 default_virt_type: xenpv
 
-# enable gPXE booting? Enabling this option will cause Cobbler
+# enable iPXE booting? Enabling this option will cause Cobbler
 # to copy the undionly.kpxe file to the tftp root directory,
-# and if a profile/system is configured to boot via gpxe it will
+# and if a profile/system is configured to boot via iPXE it will
 # chain load off pxelinux.0.
 # Default: false
-enable_gpxe: false
+enable_ipxe: false
 
 # controls whether Cobbler will add each new profile entry to the default
 # PXE boot menu.  This can be over-ridden on a per-profile
@@ -219,6 +219,17 @@ puppet_parameterized_classes: true
 # the choice of DHCP management engine is in /etc/cobbler/modules.conf
 manage_dhcp: false
 
+# set to 1 to enable DHCP IPv6 address configuration generation.
+# This currently only works with manager.isc DHCP module (isc dhcpd6 daemon)
+# See /etc/cobbler/modules.conf whether this isc module is chosen for dhcp
+# generation.
+manage_dhcp_v6: false
+
+# set to 1 to enable DHCP IPv4 address configuration generation.
+# This currently only works with manager.isc DHCP module
+# Other dhcp modules ignore this and above settings
+manage_dhcp_v4: false
+
 # set to true to enable Cobbler's DNS management features.
 # the choice of DNS mangement engine is in /etc/cobbler/modules.conf
 manage_dns: false
@@ -226,6 +237,9 @@ manage_dns: false
 # set to path of bind chroot to create bind-chroot compatible bind
 # configuration files.  This should be automatically detected.
 bind_chroot_path: ""
+
+# set to path where zonefiles of bind/named server are located.
+bind_zonefile_path: "@@bind_zonefiles@@"
 
 # set to the ip address of the master bind DNS server for creating secondary
 # bind configuration files
@@ -252,7 +266,11 @@ manage_reverse_zones: []
 # if using Cobbler with manage_dhcp, put the IP address
 # of the Cobbler server here so that PXE booting guests can find it
 # if you do not set this correctly, this will be manifested in TFTP open timeouts.
-next_server: 127.0.0.1
+next_server_v4: 127.0.0.1
+
+# And the same if you set "manage_dhcp_v6: 1".
+# Set the cobbler IPv6 address here so that PXE booting guests can find it
+next_server_v6: "::1"
 
 # settings for power management features.  optional.
 # see https://github.com/cobbler/cobbler/wiki/Power-management to learn more

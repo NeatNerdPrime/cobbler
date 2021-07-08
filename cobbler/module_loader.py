@@ -103,7 +103,7 @@ def __import_module(module_path: str, modname: str):
         MODULES_BY_CATEGORY[category][modname] = blip
     except Exception:
         logger.info('Exception raised when loading module %s' % modname)
-        log_exc(logger)
+        log_exc()
 
 
 def get_module_by_name(name: str):
@@ -137,7 +137,7 @@ def get_module_name(category: str, field: str, fallback_module_name: Optional[st
 
     # FIXME: We can't enabled this check since it is to strict atm.
     # if category not in MODULES_BY_CATEGORY:
-    #     raise ValueError("category must be one of: %s" % MODULES_BY_CATEGORY.keys())
+    # raise ValueError("category must be one of: %s" % MODULES_BY_CATEGORY.keys())
 
     if field.isspace():
         raise ValueError("field cannot be empty. Did you mean \"module\" maybe?")

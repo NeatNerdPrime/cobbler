@@ -21,6 +21,7 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 02110-1301  USA
 """
+import logging
 import os.path
 import re
 from typing import Match, Optional, TextIO, Tuple, Union
@@ -28,25 +29,31 @@ from typing import Match, Optional, TextIO, Tuple, Union
 from Cheetah.Template import Template
 
 from cobbler import utils
-from cobbler.cexceptions import FileNotFoundException
 
 
 # This class is defined using the Cheetah language. Using the 'compile' function we can compile the source directly into
 # a Python class. This class will allow us to define the cheetah builtins.
 
+logger = logging.getLogger()
+
 
 def read_macro_file(location='/etc/cobbler/cheetah_macros'):
     if not os.path.exists(location):
-        raise FileNotFoundException("Cobbler Cheetah Macros File must exist!")
+        raise FileNotFoundError("Cobbler Cheetah Macros File must exist!")
     with open(location, "r") as macro_file:
         return macro_file.read()
 
 
 def generate_cheetah_macros():
-    return Template.compile(
-        source=read_macro_file(),
-        moduleName="cobbler.template_api",
-        className="CheetahMacros")
+    try:
+        macro_file = read_macro_file()
+        return Template.compile(
+            source=macro_file,
+            moduleName="cobbler.template_api",
+            className="CheetahMacros")
+    except FileNotFoundError:
+        logger.warning("Cheetah Macros file note found. Using empty template.")
+        return Template.compile(source="")
 
 
 class CobblerTemplate(generate_cheetah_macros()):
@@ -143,6 +150,7 @@ class CobblerTemplate(generate_cheetah_macros()):
 
         :param file: The name of the file to read. Depending on the context this gets expanded automatically.
         :return: None (if the snippet file was not found) or the string with the read snippet.
+        :raises AttributeError or FileNotFoundError
         """
         if not self.varExists('autoinstall_snippets_dir'):
             raise AttributeError("\"autoinstall_snippets_dir\" is required to find Snippets")
@@ -154,13 +162,13 @@ class CobblerTemplate(generate_cheetah_macros()):
                 try:
                     contents = utils.read_file_contents(full_path, fetch_if_remote=True)
                     return contents
-                except FileNotFoundException:
+                except FileNotFoundError:
                     pass
 
         try:
             full_path = '%s/%s' % (self.getVar('autoinstall_snippets_dir'), file)
             return "#errorCatcher ListErrors\n" + utils.read_file_contents(full_path, fetch_if_remote=True)
-        except FileNotFoundException:
+        except FileNotFoundError:
             return None
 
     def SNIPPET(self, file: str):

@@ -28,6 +28,7 @@ import yaml
 
 from cobbler import download_manager
 from cobbler.cobbler_collections import manager
+from cobbler.settings import Settings
 
 
 class CobblerSvc:
@@ -56,13 +57,21 @@ class CobblerSvc:
         if self.remote is None:
             self.remote = xmlrpc.client.Server(self.server, allow_none=True)
 
+    def settings(self) -> Settings:
+        """
+        Get the application configuration.
+
+        :return: Settings object.
+        """
+        self.__xmlrpc_setup()
+        return Settings().from_dict(self.remote.get_settings())
+
     def index(self, **args) -> str:
         """
         Just a placeholder method as an entry point.
 
         :param args: This parameter is unused.
         :return: "no mode specified"
-        :rtype: str
         """
         return "no mode specified"
 
@@ -103,11 +112,12 @@ class CobblerSvc:
         data = self.remote.generate_autoinstall(profile, system, REMOTE_ADDR, REMOTE_MAC)
         return "%s" % data
 
-    def gpxe(self, profile=None, system=None, mac=None, **rest):
+    def ipxe(self, profile=None, image=None, system=None, mac=None, **rest):
         """
-        Generate a gPXE config
+        Generate a iPXE config
 
         :param profile:
+        :param image
         :param system:
         :param mac:
         :param rest: This parameter is unused.
@@ -118,11 +128,13 @@ class CobblerSvc:
             query = {"mac_address": mac}
             if profile:
                 query["profile"] = profile
+            elif image:
+                query["image"] = image
             found = self.remote.find_system(query)
             if found:
                 system = found[0]
 
-        data = self.remote.generate_gpxe(profile, system)
+        data = self.remote.generate_ipxe(profile, image, system)
         return "%s" % data
 
     def bootcfg(self, profile=None, system=None, **rest):
@@ -138,7 +150,7 @@ class CobblerSvc:
         data = self.remote.generate_bootcfg(profile, system)
         return "%s" % data
 
-    def script(self, profile=None, system=None, **rest):
+    def script(self, profile=None, system=None, **rest) -> str:
         """
         Generate a script based on snippets. Useful for post or late-action scripts where it's difficult to embed the
         script in the response file.
@@ -148,7 +160,6 @@ class CobblerSvc:
         :param rest: This may contain a parameter with the key "query_string" which has a key "script" which may be an
                      array. The element from position zero is taken.
         :return: The generated script.
-        :rtype: str
         """
         self.__xmlrpc_setup()
         data = self.remote.generate_script(profile, system, rest['query_string']['script'][0])
@@ -222,18 +233,16 @@ class CobblerSvc:
             data = "# must specify profile or system name"
         return data
 
-    def trig(self, mode="?", profile=None, system=None, REMOTE_ADDR=None, **rest):
+    def trig(self, mode: str = "?", profile=None, system=None, REMOTE_ADDR=None, **rest) -> str:
         """
         Hook to call install triggers. Only valid for a profile OR a system.
 
         :param mode: Can be "pre", "post" or "firstboot". Everything else is invalid.
-        :type mode: str
         :param profile: The profile object to run triggers for.
         :param system: The system object to run triggers for.
         :param REMOTE_ADDR: The ip if the remote system/profile.
         :param rest: This parameter is unused.
         :return: The return code of the action.
-        :rtype: str
         """
         self.__xmlrpc_setup()
         ip = REMOTE_ADDR
@@ -258,7 +267,8 @@ class CobblerSvc:
         """
         Return a list of objects of a desired category. Defaults to "systems".
 
-        :param what: May be "systems", "profiles", "distros", "images", "repos", "mgmtclasses", "packages" or "files"
+        :param what: May be "systems", "profiles", "distros", "images", "repos", "mgmtclasses", "packages",
+                            "files" or "menus"
         :param rest: This parameter is unused.
         :return: The list of object names.
         """
@@ -280,6 +290,8 @@ class CobblerSvc:
             listing = self.remote.get_packages()
         elif what == "files":
             listing = self.remote.get_files()
+        elif what == "menus":
+            listing = self.remote.get_menus()
         else:
             return "?"
         for x in listing:

@@ -42,6 +42,7 @@ httpd_service = os.environ.get('HTTPD_SERVICE', "apache2.service")
 webconfig = os.environ.get('WEBCONFIG', "/etc/apache2/vhosts.d")
 webroot = os.environ.get('WEBROOT', "/srv/www")
 tftproot = os.environ.get('TFTPROOT', "/srv/tftpboot")
+bind_zonefiles = os.environ.get('ZONEFILES', "/var/lib/named/")
 
 
 #####################################################################
@@ -438,6 +439,7 @@ class restorestate(statebase):
         self._copy(os.path.join(self.statepath, 'users.conf'), etcpath)
         self._copy(os.path.join(self.statepath, 'users.digest'), etcpath)
         self._copy(os.path.join(self.statepath, 'dhcp.template'), etcpath)
+        self._copy(os.path.join(self.statepath, 'dhcp6.template'), etcpath)
         self._copy(os.path.join(self.statepath, 'rsync.template'), etcpath)
 
 #####################################################################
@@ -469,6 +471,7 @@ class savestate(statebase):
         self._copy(os.path.join(etcpath, 'users.conf'), self.statepath)
         self._copy(os.path.join(etcpath, 'users.digest'), self.statepath)
         self._copy(os.path.join(etcpath, 'dhcp.template'), self.statepath)
+        self._copy(os.path.join(etcpath, 'dhcp6.template'), self.statepath)
         self._copy(os.path.join(etcpath, 'rsync.template'), self.statepath)
 
 
@@ -584,6 +587,7 @@ if __name__ == "__main__":
                               "templates/etc/dnsmasq.template",
                               "templates/etc/rsync.template",
                               "templates/etc/dhcp.template",
+                              "templates/etc/dhcp6.template",
                               "templates/etc/ndjbdns.template"]),
             ("%s/iso" % etcpath, glob("templates/iso/*")),
             ("%s/boot_loader_conf" % etcpath, glob("templates/boot_loader_conf/*")),
@@ -602,6 +606,7 @@ if __name__ == "__main__":
             ("%s/ppc" % tftproot, []),
             ("%s/s390x" % tftproot, []),
             ("%s/pxelinux.cfg" % tftproot, []),
+            ("%s/ipxe" % tftproot, []),
             ("%s/grub/system" % tftproot, []),
             ("%s/grub/system_link" % tftproot, []),
             ("%s/grub_config/grub/system" % libpath, []),
@@ -622,6 +627,8 @@ if __name__ == "__main__":
             ("%s/triggers/add/package/post" % libpath, []),
             ("%s/triggers/add/file/pre" % libpath, []),
             ("%s/triggers/add/file/post" % libpath, []),
+            ("%s/triggers/add/menu/pre" % libpath, []),
+            ("%s/triggers/add/menu/post" % libpath, []),
             ("%s/triggers/delete/distro/pre" % libpath, []),
             ("%s/triggers/delete/distro/post" % libpath, []),
             ("%s/triggers/delete/profile/pre" % libpath, []),
@@ -636,6 +643,8 @@ if __name__ == "__main__":
             ("%s/triggers/delete/package/post" % libpath, []),
             ("%s/triggers/delete/file/pre" % libpath, []),
             ("%s/triggers/delete/file/post" % libpath, []),
+            ("%s/triggers/delete/menu/pre" % libpath, []),
+            ("%s/triggers/delete/menu/post" % libpath, []),
             ("%s/triggers/install/pre" % libpath, []),
             ("%s/triggers/install/post" % libpath, []),
             ("%s/triggers/install/firstboot" % libpath, []),
@@ -656,6 +665,8 @@ if __name__ == "__main__":
             ("%s/triggers/task/package/post" % libpath, []),
             ("%s/triggers/task/file/pre" % libpath, []),
             ("%s/triggers/task/file/post" % libpath, []),
+            ("%s/triggers/task/menu/pre" % libpath, []),
+            ("%s/triggers/task/menu/post" % libpath, []),
             # Build empty directories to hold the database
             ("%s/collections" % libpath, []),
             ("%s/collections/distros" % libpath, []),
@@ -666,6 +677,7 @@ if __name__ == "__main__":
             ("%s/collections/mgmtclasses" % libpath, []),
             ("%s/collections/packages" % libpath, []),
             ("%s/collections/files" % libpath, []),
+            ("%s/collections/menus" % libpath, []),
             # logfiles
             ("%s/cobbler/kicklog" % logpath, []),
             ("%s/cobbler/syslog" % logpath, []),
@@ -686,6 +698,8 @@ if __name__ == "__main__":
             ("%s/cobbler/svc/" % webroot, ["svc/services.py"]),
             # zone-specific templates directory
             ("%s/zone_templates" % etcpath, glob("templates/zone_templates/*")),
+            # windows-specific templates directory
+            ("%s/windows" % etcpath, glob("templates/windows/*")),
             ("%s" % etcpath, ["config/cobbler/logging_config.conf"]),
             # man pages
             ("%s/man1" % docpath, glob("build/sphinx/man/*.1")),
@@ -695,7 +709,6 @@ if __name__ == "__main__":
             ("%s/tests/cli" % datadir, glob("tests/cli/*.py")),
             ("%s/tests/modules" % datadir, glob("tests/modules/*.py")),
             ("%s/tests/modules/authentication" % datadir, glob("tests/modules/authentication/*.py")),
-            ("%s/tests/views" % datadir, glob("tests/views/*.py")),
             ("%s/tests/xmlrpcapi" % datadir, glob("tests/xmlrpcapi/*.py")),
         ],
     )

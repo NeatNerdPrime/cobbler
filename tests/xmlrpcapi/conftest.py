@@ -1,6 +1,8 @@
 import logging
+import os
 import sys
 import xmlrpc.client as xmlrpcclient
+from pathlib import Path
 
 import pytest
 
@@ -10,7 +12,7 @@ from cobbler.utils import local_get_cobbler_api_url, get_shared_secret
 
 
 @pytest.fixture(scope="session")
-def remote(cobbler_xmlrpc_base):
+def remote(cobbler_xmlrpc_base) -> xmlrpcclient.ServerProxy:
     """
 
     :param cobbler_xmlrpc_base:
@@ -20,7 +22,7 @@ def remote(cobbler_xmlrpc_base):
 
 
 @pytest.fixture(scope="session")
-def token(cobbler_xmlrpc_base):
+def token(cobbler_xmlrpc_base) -> str:
     """
 
     :param cobbler_xmlrpc_base:
@@ -50,27 +52,27 @@ def cobbler_xmlrpc_base():
 
 
 @pytest.fixture(scope="class")
-def testsnippet():
+def testsnippet() -> str:
     return "# This is a small simple testsnippet!"
 
 
 @pytest.fixture()
 def snippet_add(remote, token):
-    def _snippet_add(name, data):
+    def _snippet_add(name: str, data):
         remote.write_autoinstall_snippet(name, data, token)
     return _snippet_add
 
 
 @pytest.fixture()
 def snippet_remove(remote, token):
-    def _snippet_remove(name):
+    def _snippet_remove(name: str):
         remote.remove_autoinstall_snippet(name, token)
     return _snippet_remove
 
 
 @pytest.fixture()
 def create_distro(remote, token):
-    def _create_distro(name, arch, breed, path_kernel, path_initrd):
+    def _create_distro(name: str, arch: str, breed: str, path_kernel: str, path_initrd: str):
         distro = remote.new_distro(token)
         remote.modify_distro(distro, "name", name, token)
         remote.modify_distro(distro, "arch", arch, token)
@@ -84,7 +86,7 @@ def create_distro(remote, token):
 
 @pytest.fixture()
 def remove_distro(remote, token):
-    def _remove_distro(name):
+    def _remove_distro(name: str):
         remote.remove_distro(name, token)
     return _remove_distro
 
@@ -200,3 +202,272 @@ def remove_repo(remote, token):
     def _remove_repo(name):
         remote.remove_repo(name, token)
     return _remove_repo
+
+
+@pytest.fixture()
+def create_menu(remote, token):
+    def _create_menu(name, display_name):
+        menu_id = remote.new_menu(token)
+
+        remote.modify_menu(menu_id, "name", name, token)
+        remote.modify_menu(menu_id, "display_name", display_name, token)
+
+        remote.save_menu(menu_id, token)
+        return menu_id
+    return _create_menu
+
+
+@pytest.fixture()
+def remove_menu(remote, token):
+    def _remove_menu(name):
+        remote.remove_menu(name, token)
+    return _remove_menu
+
+
+@pytest.fixture(scope="function")
+def create_testprofile(remote, token):
+    """
+    Create a profile with the name "testprofile0"
+    :param remote: See the corresponding fixture.
+    :param token: See the corresponding fixture.
+    """
+    profile = remote.new_profile(token)
+    remote.modify_profile(profile, "name", "testprofile0", token)
+    remote.modify_profile(profile, "distro", "testdistro0", token)
+    remote.modify_profile(profile, "kernel_options", "a=1 b=2 c=3 c=4 c=5 d e", token)
+    remote.modify_profile(profile, "menu", "testmenu0", token)
+    remote.save_profile(profile, token)
+
+
+@pytest.fixture(scope="function")
+def remove_testprofile(remote, token):
+    """
+    Removes the profile with the name "testprofile0".
+    :param remote: See the corresponding fixture.
+    :param token: See the corresponding fixture.
+    """
+    yield
+    remote.remove_profile("testprofile0", token)
+
+
+@pytest.fixture(scope="function")
+def remove_testdistro(remote, token):
+    """
+    Removes the distro "testdistro0" from the running cobbler after the test.
+    :param remote: See the corresponding fixture.
+    :param token: See the corresponding fixture.
+    """
+    yield
+    remote.remove_distro("testdistro0", token, False)
+
+
+@pytest.fixture(scope="function")
+def create_testdistro(remote, token, fk_kernel, fk_initrd, create_kernel_initrd):
+    """
+    Creates a distro "testdistro0" with the architecture "x86_64", breed "suse" and the fixtures which are setting the
+    fake kernel and initrd.
+    :param remote: See the corresponding fixture.
+    :param token: See the corresponding fixture.
+    :param fk_kernel: See the corresponding fixture.
+    :param fk_initrd: See the corresponding fixture.
+    """
+    folder = create_kernel_initrd(fk_kernel, fk_initrd)
+    distro = remote.new_distro(token)
+    remote.modify_distro(distro, "name", "testdistro0", token)
+    remote.modify_distro(distro, "arch", "x86_64", token)
+    remote.modify_distro(distro, "breed", "suse", token)
+    remote.modify_distro(distro, "kernel", os.path.join(folder, fk_kernel), token)
+    remote.modify_distro(distro, "initrd", os.path.join(folder, fk_initrd), token)
+    remote.save_distro(distro, token)
+
+
+@pytest.fixture(scope="function")
+def create_testsystem(remote, token):
+    """
+    Add a system with the name "testsystem0", the system is assigend to the profile "testprofile0".
+    :param remote: See the corresponding fixture.
+    :param token: See the corresponding fixture.
+    """
+    system = remote.new_system(token)
+    remote.modify_system(system, "name", "testsystem0", token)
+    remote.modify_system(system, "profile", "testprofile0", token)
+    remote.save_system(system, token)
+
+
+@pytest.fixture()
+def remove_testsystem(remote, token):
+    """
+    Remove a system "testsystem0".
+    :param remote: See the corresponding fixture.
+    :param token: See the corresponding fixture.
+    """
+    yield
+    remote.remove_system("testsystem0", token, False)
+
+
+@pytest.fixture(scope="function")
+def create_testrepo(remote, token):
+    """
+    Create a testrepository with the name "testrepo0"
+    :param remote: See the corresponding fixture.
+    :param token: See the corresponding fixture.
+    """
+    repo = remote.new_repo(token)
+    remote.modify_repo(repo, "name", "testrepo0", token)
+    remote.modify_repo(repo, "arch", "x86_64", token)
+    remote.modify_repo(repo, "mirror", "http://something", token)
+    remote.save_repo(repo, token)
+
+
+@pytest.fixture(scope="function")
+def remove_testrepo(remote, token):
+    """
+    Remove a repo "testrepo0".
+    :param remote: See the corresponding fixture.
+    :param token: See the corresponding fixture.
+    """
+    yield
+    remote.remove_repo("testrepo0", token, False)
+
+
+@pytest.fixture(scope="function")
+def create_testimage(remote, token):
+    """
+    Create a testrepository with the name "testimage0"
+    :param remote: See the corresponding fixture.
+    :param token: See the corresponding fixture.
+    """
+    image = remote.new_image(token)
+    remote.modify_image(image, "name", "testimage0", token)
+    remote.save_image(image, token)
+
+
+@pytest.fixture(scope="function")
+def remove_testimage(remote, token):
+    """
+    Remove the image "testimage0".
+    :param remote: See the corresponding fixture.
+    :param token: See the corresponding fixture.
+    """
+    yield
+    remote.remove_image("testimage0", token, False)
+
+
+@pytest.fixture(scope="function")
+def create_testpackage(remote, token):
+    """
+    Create a testpackage with the name "testpackage0"
+    :param remote: See the corresponding fixture.
+    :param token: See the corresponding fixture.
+    """
+    package = remote.new_package(token)
+    remote.modify_package(package, "name", "testpackage0", token)
+    remote.save_package(package, token)
+
+
+@pytest.fixture(scope="function")
+def remove_testpackage(remote, token):
+    """
+    Remove a package "testpackage0".
+    :param remote: See the corresponding fixture.
+    :param token: See the corresponding fixture.
+    """
+
+    yield
+    remote.remove_package("testpackage0", token, False)
+
+
+@pytest.fixture(scope="function")
+def create_testfile_item(remote, token):
+    """
+    Create a testfile with the name "testfile0"
+    :param remote: See the corresponding fixture.
+    :param token: See the corresponding fixture.
+    """
+
+    mfile = remote.new_file(token)
+    remote.modify_file(mfile, "name", "testfile0", token)
+    remote.modify_file(mfile, "path", "/dev/shm/", token)
+    remote.modify_file(mfile, "group", "root", token)
+    remote.modify_file(mfile, "owner", "root", token)
+    remote.modify_file(mfile, "mode", "0600", token)
+    remote.modify_file(mfile, "is_dir", "True", token)
+    remote.save_file(mfile, token)
+
+
+@pytest.fixture(scope="function")
+def remove_testfile(remote, token):
+    """
+    Remove a file "testfile0".
+    :param remote: See the corresponding fixture.
+    :param token: See the corresponding fixture.
+    """
+    yield
+    remote.remove_file("testfile0", token, False)
+
+
+@pytest.fixture(scope="function")
+def create_mgmtclass(remote, token):
+    """
+    Create a mgmtclass with the name "mgmtclass0"
+    :param remote: See the corresponding fixture.
+    :param token: See the corresponding fixture.
+    """
+
+    mgmtclass0 = remote.new_mgmtclass(token)
+    remote.modify_mgmtclass(mgmtclass0, "name", "mgmtclass0", token)
+    remote.save_mgmtclass(mgmtclass0, token)
+
+
+@pytest.fixture(scope="function")
+def remove_mgmtclass(remote, token):
+    """
+    Remove a mgmtclass "mgmtclass0".
+    :param remote: See the corresponding fixture.
+    :param token: See the corresponding fixture.
+    """
+    yield
+    remote.remove_mgmtclass("mgmtclass0", token, False)
+
+
+@pytest.fixture(scope="function")
+def create_testmenu(remote, token):
+    """
+    Create a menu with the name "testmenu0"
+    :param remote: See the corresponding fixture.
+    :param token: See the corresponding fixture.
+    """
+
+    menu = remote.new_menu(token)
+    remote.modify_menu(menu, "name", "testmenu0", token)
+    remote.save_menu(menu, token)
+
+
+@pytest.fixture(scope="function")
+def remove_testmenu(remote, token):
+    """
+    Remove a menu "testmenu0".
+    :param remote: See the corresponding fixture.
+    :param token: See the corresponding fixture.
+    """
+    yield
+    remote.remove_menu("testmenu0", token, False)
+
+
+@pytest.fixture(scope="function")
+def template_files(redhat_autoinstall, suse_autoyast, ubuntu_preseed):
+    """
+    Create the template files and remove them afterwards.
+
+    :return:
+    """
+    folder = "/var/lib/cobbler/templates"
+    Path(os.path.join(folder, redhat_autoinstall)).touch()
+    Path(os.path.join(folder, suse_autoyast)).touch()
+    Path(os.path.join(folder, ubuntu_preseed)).touch()
+
+    yield
+
+    os.remove(os.path.join(folder, redhat_autoinstall))
+    os.remove(os.path.join(folder, suse_autoyast))
+    os.remove(os.path.join(folder, ubuntu_preseed))

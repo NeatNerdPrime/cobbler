@@ -11,7 +11,6 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 02110-1301  USA.
 """
 
-from cobbler.actions import litesync
 from cobbler.cobbler_collections import collection
 from cobbler.items import image as image
 from cobbler import utils
@@ -32,11 +31,11 @@ class Images(collection.Collection):
     def collection_types() -> str:
         return "images"
 
-    def factory_produce(self, collection_mgr, item_dict):
+    def factory_produce(self, api, item_dict):
         """
         Return a Distro forged from item_dict
         """
-        new_image = image.Image(collection_mgr)
+        new_image = image.Image(api)
         new_image.from_dict(item_dict)
         return new_image
 
@@ -44,16 +43,17 @@ class Images(collection.Collection):
                recursive: bool = True):
         """
         Remove element named 'name' from the collection
+
+        :raises CX
         """
 
-        # NOTE: with_delete isn't currently meaningful for repos
-        # but is left in for consistancy in the API.  Unused.
+        # NOTE: with_delete isn't currently meaningful for repos but is left in for consistency in the API. Unused.
 
         name = name.lower()
 
         # first see if any Groups use this distro
         if not recursive:
-            for v in self.collection_mgr.systems():
+            for v in self.api.systems():
                 if v.image is not None and v.image.lower() == name:
                     raise CX("removal would orphan system: %s" % v.name)
 
@@ -64,13 +64,13 @@ class Images(collection.Collection):
             if recursive:
                 kids = obj.get_children()
                 for k in kids:
-                    self.collection_mgr.api.remove_system(k, recursive=True)
+                    self.api.remove_system(k, recursive=True)
 
             if with_delete:
                 if with_triggers:
-                    utils.run_triggers(self.collection_mgr.api, obj, "/var/lib/cobbler/triggers/delete/image/pre/*", [])
+                    utils.run_triggers(self.api, obj, "/var/lib/cobbler/triggers/delete/image/pre/*", [])
                 if with_sync:
-                    lite_sync = litesync.CobblerLiteSync(self.collection_mgr)
+                    lite_sync = self.api.get_sync()
                     lite_sync.remove_single_image(name)
 
             self.lock.acquire()
@@ -82,8 +82,8 @@ class Images(collection.Collection):
 
             if with_delete:
                 if with_triggers:
-                    utils.run_triggers(self.collection_mgr.api, obj, "/var/lib/cobbler/triggers/delete/image/post/*", [])
-                    utils.run_triggers(self.collection_mgr.api, obj, "/var/lib/cobbler/triggers/change/*", [])
+                    utils.run_triggers(self.api, obj, "/var/lib/cobbler/triggers/delete/image/post/*", [])
+                    utils.run_triggers(self.api, obj, "/var/lib/cobbler/triggers/change/*", [])
 
             return
 

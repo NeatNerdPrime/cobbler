@@ -189,7 +189,8 @@ class BuildIso:
             data = utils.blender(self.api, False, profile)
 
             # SUSE is not using 'text'. Instead 'textmode' is used as kernel option.
-            utils.kopts_overwrite(None, dist, data['kernel_options'], self.api.settings())
+            if dist is not None:
+                utils.kopts_overwrite(data['kernel_options'], self.api.settings().server, dist.breed)
 
             if not re.match(r"[a-z]+://.*", data["autoinstall"]):
                 data["autoinstall"] = "http://%s:%s/cblr/svc/op/autoinstall/profile/%s" % (
@@ -525,7 +526,8 @@ class BuildIso:
             data = utils.blender(self.api, False, descendant)
 
             # SUSE is not using 'text'. Instead 'textmode' is used as kernel option.
-            utils.kopts_overwrite(None, distro, data['kernel_options'], self.settings)
+            if distro is not None:
+                utils.kopts_overwrite(data['kernel_options'], self.settings.server, distro.breed)
 
             cfg.write("\n")
             cfg.write("LABEL %s\n" % descendant.name)
@@ -630,9 +632,7 @@ class BuildIso:
         :param systems: Don't use that when building standalone isos.
         :param distro: (For standalone only)
         :param standalone: This means that no network connection is needed to install the generated iso.
-        :type standalone: bool
         :param airgapped: This option implies standalone=True.
-        :type airgapped: bool
         :param source: If the iso should be offline available this is the path to the sources of the image.
         :param exclude_dns: Whether the repositories have to be locally available or the internet is reachable.
         :param xorrisofs_opts: xorrisofs options to include additionally.
